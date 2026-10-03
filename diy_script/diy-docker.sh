@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2025 huajiaoshu520
+# Copyright (c) 2019-2025 longdongqiang-jason
 #
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
 #
-# https://github.com/huajiaoshu520/X86
+# https://github.com/longdongqiang-jason/X86
 # File name: diy-docker.sh
 # Description: OpenWrt DIY script docker (After Update feeds)
 #
@@ -27,15 +27,15 @@ sed -i -e 's/29.6.1/29.8.2/g' \
        
 #containerd       
 wget -O ./feeds/packages/utils/containerd/Makefile \
-  https://raw.githubusercontent.com/huajiaoshu520/X86-daed/refs/heads/main/patches/containerd/Makefile
+  https://raw.githubusercontent.com/longdongqiang-jason/X86-daed/refs/heads/main/patches/containerd/Makefile
   
 #runc  
 wget -O ./feeds/packages/utils/runc/Makefile \
-  https://raw.githubusercontent.com/huajiaoshu520/X86-daed/refs/heads/main/patches/runc/Makefile
+  https://raw.githubusercontent.com/longdongqiang-jason/X86-daed/refs/heads/main/patches/runc/Makefile
   
 #适配docker29.8.0
 #wget -O ./feeds/packages/utils/docker/Makefile \
-#  https://raw.githubusercontent.com/huajiaoshu520/X86-daed/refs/heads/main/patches/docker/test
+#  https://raw.githubusercontent.com/longdongqiang-jason/X86-daed/refs/heads/main/patches/docker/test
 sed -i '/^[[:space:]]*cli\/compose\/schema\/data[[:space:]]*\\$/a\
 \tvendor/github.com/santhosh-tekuri/jsonschema/v6/metaschemas \\' ./feeds/packages/utils/docker/Makefile
 
@@ -53,7 +53,7 @@ sed -i -e 's/29.6.1/29.8.2/g' \
 # 补丁      
 #mkdir -p ./feeds/packages/utils/dockerd/patches
 #wget -O ./feeds/packages/utils/dockerd/patches/001-skip-copy-nested-binaries.patch \
-#  https://raw.githubusercontent.com/huajiaoshu520/X86-daed/refs/heads/main/patches/dockerd/patches/001-skip-copy-nested-binaries.patch
+#  https://raw.githubusercontent.com/longdongqiang-jason/X86-daed/refs/heads/main/patches/dockerd/patches/001-skip-copy-nested-binaries.patch
 
 # docker buildx
 #BUILDX_VERSION="0.37.1"
