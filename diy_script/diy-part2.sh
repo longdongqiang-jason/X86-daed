@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2025 huajiaoshu520
+# Copyright (c) 2019-2025 longdongqiang-jason
 #
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
 #
-# https://github.com/huajiaoshu520/X86
+# https://github.com/longdongqiang-jason/X86
 # File name: diy-part2.sh
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 #
@@ -33,7 +33,7 @@ sed -i 's/^BUILD_ID=".*"/BUILD_ID="%R Compiled by Jason"/' ./package/base-files/
 #./scripts/feeds install -a
 
 # 主题背景
-mkdir -p ./feeds/luci/themes/luci-theme-argon/htdocs/luci-static/argon/background/ && curl -o ./feeds/luci/themes/luci-theme-argon/htdocs/luci-static/argon/background/Network.mp4 https://raw.githubusercontent.com/huajiaoshu520/X86/main/other/argon/video/default/Network.mp4
+mkdir -p ./feeds/luci/themes/luci-theme-argon/htdocs/luci-static/argon/background/ && curl -o ./feeds/luci/themes/luci-theme-argon/htdocs/luci-static/argon/background/Network.mp4 https://raw.githubusercontent.com/longdongqiang-jason/X86/main/other/argon/video/default/Network.mp4
 
 # 临时
 sed -i 's/6.12/6.18/g'  ./target/linux/x86/Makefile
