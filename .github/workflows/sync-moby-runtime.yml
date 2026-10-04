@@ -1,0 +1,187 @@
+name: Update containerd and runc
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Get latest Moby release
+        id: moby
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RELEASE_JSON="$(curl -fsSL \
+            https://api.github.com/repos/moby/moby/releases/latest)"
+
+          MOBY_TAG="$(echo "$RELEASE_JSON" | jq -r '.tag_name')"
+          MOBY_VERSION="${MOBY_TAG#docker-v}"
+
+          echo "Latest Moby release: ${MOBY_TAG}"
+          echo "Moby version: ${MOBY_VERSION}"
+
+          echo "tag=${MOBY_TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${MOBY_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Get containerd and runc versions
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MOBY_TAG="${{ steps.moby.outputs.tag }}"
+
+          DOCKERFILE_URL="https://raw.githubusercontent.com/moby/moby/${MOBY_TAG}/Dockerfile"
+
+          echo "Reading:"
+          echo "${DOCKERFILE_URL}"
+
+          curl -fsSL "${DOCKERFILE_URL}" -o /tmp/moby-Dockerfile
+
+          CONTAINERD_VERSION="$(
+            sed -n \
+              's/^ARG CONTAINERD_VERSION=v\([^[:space:]]*\).*$/\1/p' \
+              /tmp/moby-Dockerfile |
+            head -n1
+          )"
+
+          RUNC_VERSION="$(
+            sed -n \
+              's/^ARG RUNC_VERSION=v\([^[:space:]]*\).*$/\1/p' \
+              /tmp/moby-Dockerfile |
+            head -n1
+          )"
+
+          if [ -z "${CONTAINERD_VERSION}" ]; then
+            echo "Failed to get containerd version"
+            exit 1
+          fi
+
+          if [ -z "${RUNC_VERSION}" ]; then
+            echo "Failed to get runc version"
+            exit 1
+          fi
+
+          echo "containerd: ${CONTAINERD_VERSION}"
+          echo "runc:       ${RUNC_VERSION}"
+
+          echo "containerd=${CONTAINERD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "runc=${RUNC_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate PKG_HASH
+        id: hash
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CONTAINERD_VERSION="${{ steps.runtime.outputs.containerd }}"
+          RUNC_VERSION="${{ steps.runtime.outputs.runc }}"
+
+          CONTAINERD_URL="https://codeload.github.com/containerd/containerd/tar.gz/v${CONTAINERD_VERSION}"
+          RUNC_URL="https://codeload.github.com/opencontainers/runc/tar.gz/v${RUNC_VERSION}"
+
+          echo "Downloading containerd ${CONTAINERD_VERSION}..."
+          curl -fL \
+            --retry 3 \
+            --retry-delay 2 \
+            "${CONTAINERD_URL}" \
+            -o /tmp/containerd.tar.gz
+
+          echo "Downloading runc ${RUNC_VERSION}..."
+          curl -fL \
+            --retry 3 \
+            --retry-delay 2 \
+            "${RUNC_URL}" \
+            -o /tmp/runc.tar.gz
+
+          CONTAINERD_HASH="$(
+            sha256sum /tmp/containerd.tar.gz |
+            awk '{print $1}'
+          )"
+
+          RUNC_HASH="$(
+            sha256sum /tmp/runc.tar.gz |
+            awk '{print $1}'
+          )"
+
+          echo "containerd ${CONTAINERD_VERSION}"
+          echo "SHA256: ${CONTAINERD_HASH}"
+
+          echo "runc ${RUNC_VERSION}"
+          echo "SHA256: ${RUNC_HASH}"
+
+          echo "containerd=${CONTAINERD_HASH}" >> "$GITHUB_OUTPUT"
+          echo "runc=${RUNC_HASH}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Makefiles
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CONTAINERD_VERSION="${{ steps.runtime.outputs.containerd }}"
+          RUNC_VERSION="${{ steps.runtime.outputs.runc }}"
+
+          CONTAINERD_HASH="${{ steps.hash.outputs.containerd }}"
+          RUNC_HASH="${{ steps.hash.outputs.runc }}"
+
+          CONTAINERD_MAKEFILE="patches/containerd/Makefile"
+          RUNC_MAKEFILE="patches/runc/Makefile"
+
+          echo "Updating containerd..."
+          sed -i \
+            -e "s/^PKG_VERSION:=.*/PKG_VERSION:=${CONTAINERD_VERSION}/" \
+            -e "s/^PKG_HASH:=.*/PKG_HASH:=${CONTAINERD_HASH}/" \
+            "${CONTAINERD_MAKEFILE}"
+
+          echo "Updating runc..."
+          sed -i \
+            -e "s/^PKG_VERSION:=.*/PKG_VERSION:=${RUNC_VERSION}/" \
+            -e "s/^PKG_HASH:=.*/PKG_HASH:=${RUNC_HASH}/" \
+            "${RUNC_MAKEFILE}"
+
+          echo
+          echo "===== containerd ====="
+          grep -E '^PKG_(VERSION|HASH):=' \
+            "${CONTAINERD_MAKEFILE}"
+
+          echo
+          echo "===== runc ====="
+          grep -E '^PKG_(VERSION|HASH):=' \
+            "${RUNC_MAKEFILE}"
+
+      - name: Check changes
+        id: changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changes detected:"
+            git diff
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            patches/containerd/Makefile \
+            patches/runc/Makefile
+
+          git commit -m "container: update runtime dependencies for Moby ${{ steps.moby.outputs.version }}"
+
+          git push

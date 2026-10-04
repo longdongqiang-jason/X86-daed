@@ -1,0 +1,387 @@
+name: Openwrt-X86
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+#    inputs:
+#      ssh:
+#        description: 'SSH connection to Actions'
+#        required: false
+#        default: 'false'
+#周日22时 CN周一6时
+#  schedule:
+#    - cron: 0 16 * * 0
+
+env:
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH: master
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: config/X86.config
+  DIY_P1_SH: diy_script/diy-part1.sh
+  DIY_P2_SH: diy_script/diy-part2.sh
+  DIY_DOCKER_SH: diy_script/diy-docker.sh
+  COMMIT_LOG_NUM: 1
+  RELEASE_TAG: 25.12-daed-X86
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+  UPLOAD_COWTRANSFER: false
+  UPLOAD_WETRANSFER: false
+  UPLOAD_RELEASE: true
+  SERVERCHAN_SCKEY: true
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+
+    - name: 检查服务器性能 # Check Server Performance
+      run: |
+        echo "警告⚠"
+        echo "分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
+        echo -e "已知CPU型号（降序）：7763，8370C，8272CL，8171M，E5-2673 \n"
+
+        echo "--------------------------CPU信息--------------------------"
+        echo "CPU物理数量：$(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
+        echo -e "CPU核心信息：$(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c) \n"
+
+        echo "--------------------------内存信息--------------------------"
+        echo "已安装内存详细信息："
+        echo -e "$(sudo lshw -short -C memory | grep GiB) \n"
+
+        echo "--------------------------硬盘信息--------------------------"
+        echo "硬盘数量：$(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
+
+
+    #- name: 精简系统释放磁盘空间 (Ubuntu)
+    #  uses: jlumbroso/free-disk-space@main
+    #  with:
+    #    tool-cache: true
+    #    android: true
+    #    dotnet: true
+    #    haskell: true
+    #    large-packages: true
+    #    docker-images: true
+    #    swap-storage: true
+
+
+    - name: 检查准备 # Checkout
+      uses: actions/checkout@main
+      with:
+        fetch-depth: 0
+
+
+    - name: 开始安装编译所需系统 # Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq full-upgrade
+        sudo -E apt-get -qq install $(curl -fsSL https://github.com/longdongqiang-jason/X86-daed/raw/main/depends-ubuntu-2404)
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo -E npm install -g pnpm
+        sudo timedatectl set-timezone "$TZ"
+
+        sudo mkdir -p /mnt/workdir
+        sudo chown $USER:$GROUPS /mnt/workdir
+
+
+    - name: 下载固件源码 # Clone source code
+      working-directory: /mnt/workdir
+      run: |
+        df -hT $PWD
+
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+
+        ln -sf /mnt/workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+
+    - name: 缓存 # Cache
+      uses: klever1988/cachewrtbuild@main
+      with:
+        ccache: 'true'
+        prefix: ${{ github.workspace }}/openwrt
+
+
+    - name: patch1补丁和自定义设置 # Load custom feeds
+      run: |
+        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+
+        chmod +x $DIY_P1_SH
+
+        cd openwrt
+
+        $GITHUB_WORKSPACE/$DIY_P1_SH
+
+        echo "=========================================="
+        echo "开始修改 sysupgrade：升级前停止 daed"
+        echo "=========================================="
+
+        # LEDE 不同版本可能存在不同路径
+        if [ -f "package/base/files/sbin/sysupgrade" ]; then
+          SYSUPGRADE="package/base/files/sbin/sysupgrade"
+        elif [ -f "package/base-files/files/sbin/sysupgrade" ]; then
+          SYSUPGRADE="package/base-files/files/sbin/sysupgrade"
+        else
+          echo "错误：找不到 sysupgrade 文件"
+          echo "正在搜索："
+          find package -path '*/files/sbin/sysupgrade' -type f -print
+          exit 1
+        fi
+
+        echo "找到 sysupgrade：$SYSUPGRADE"
+
+        # 防止重复添加
+        if grep -q "daed stop" "$SYSUPGRADE"; then
+          echo "sysupgrade 已经包含 daed stop，无需重复修改"
+        else
+          python3 - "$SYSUPGRADE" <<'PY'
+        from pathlib import Path
+        import sys
+
+        file = Path(sys.argv[1])
+        text = file.read_text()
+
+        old = """if [ $TEST -eq 1 ]; then
+        	exit 0
+        fi
+
+        install_bin /sbin/upgraded"""
+
+        new = """if [ $TEST -eq 1 ]; then
+        	exit 0
+        fi
+
+        if [ -x /etc/init.d/daed ]; then
+        	/etc/init.d/daed stop
+        fi
+
+        install_bin /sbin/upgraded"""
+
+        if old not in text:
+            print("错误：没有找到 sysupgrade 的目标位置")
+            print("请检查当前 LEDE master 的 sysupgrade 结构")
+            sys.exit(1)
+
+        text = text.replace(old, new, 1)
+        file.write_text(text)
+
+        print("sysupgrade 修改成功")
+        PY
+        fi
+
+        echo "=========================================="
+        echo "检查 sysupgrade 修改结果"
+        echo "=========================================="
+
+        grep -A6 -B3 "daed stop" "$SYSUPGRADE"
+
+        echo "=========================================="
+        echo "sysupgrade patch 完成"
+        echo "=========================================="
+
+
+    - name: 更新源 # Update feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+
+
+    - name: 安装源 # Install feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds install -a
+
+
+    - name: patch2补丁和自定义设置 # Load custom configuration
+      run: |
+        [ -e files ] && mv files openwrt/files
+
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+
+        chmod +x $DIY_P2_SH
+
+        cd openwrt
+
+        $GITHUB_WORKSPACE/$DIY_P2_SH
+
+        cd ..
+
+        platforms=("X86")
+
+        for i in "${platforms[@]}"; do
+          [ -e config/$i.config ] && cp -r config/$i.config openwrt/.config
+
+          cd openwrt
+
+          make defconfig
+
+          cd ..
+
+          cp -f openwrt/.config config/$i.config
+        done
+
+
+    - name: docker补丁和自定义设置 # Load custom configuration
+      run: |
+        chmod +x $DIY_DOCKER_SH
+
+        cd openwrt
+
+        $GITHUB_WORKSPACE/$DIY_DOCKER_SH
+
+
+    - name: 自动更新config # Git auto update config
+      uses: stefanzweifel/git-auto-commit-action@v7.1.0
+      id: commit
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        commit_message: 自动更新config
+        branch: main
+        commit_author: longdongqiang-jason
+
+
+    - name: 下载软件包 # Download package
+      id: package
+      run: |
+        cd openwrt
+
+        make download -j8
+
+        find dl -size -1024c -exec ls -l {} \;
+
+        find dl -size -1024c -exec rm -f {} \;
+
+
+    #- name: netdata温控检测
+    #  run: |
+    #    cd openwrt
+    #    tar -xzvf dl/netdata-v1.33.1.tar.gz
+    #    sed -i 's/# sensors=force/sensors=force/' ./netdata-v1.33.1/collectors/charts.d.plugin/charts.d.conf
+    #    tar -czvf dl/netdata-v1.33.1.tar.gz netdata-v1.33.1
+    #    rm -rf netdata-v1.33.1
+    #    sha256sum dl/netdata-v1.33.1.tar.gz | awk '{print $1}' > checksum.txt
+    #    sed -i "s/20ba8695d87187787b27128ac3aab9b09aa29ca6b508c48542e0f7d50ec9322b/$(cat checksum.txt)/" ./netdata-v1.33.1/collectors/charts.d.plugin/charts.d.conf
+
+
+    - name: 开始编译固件 # Compile the firmware
+      id: compile
+      run: |
+        cd openwrt
+
+        echo -e "$(nproc) thread compile"
+
+        make -j$(nproc) || make -j1 || make -j1 V=s
+
+        echo "status=success" >> $GITHUB_OUTPUT
+
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+
+        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+
+
+    - name: 检查空间使用情况 # Check space usage
+      if: (!cancelled())
+      run: |
+        df -hT
+
+
+    - name: 获取内核版本号
+      run: |
+        cd openwrt/bin/targets/x86/64
+
+        KERNEL_VERSION=$(ls -l *openwrt-x86-64-generic-kernel.bin | awk '{print $9}' | cut -d '-' -f1)
+
+        echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
+
+
+    - name: 整理固件文件夹 # Organize files
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd openwrt/bin/targets/*/*
+
+        rm -rf packages
+
+        rm -rf profiles.json feeds.buildinfo config.buildinfo *openwrt-x86-64-generic-kernel.bin *openwrt-x86-64-generic-squashfs-rootfs.img.gz *openwrt-x86-64-generic.manifest sha256sums version.buildinfo
+
+        for file in *-openwrt-x86-64-generic-squashfs-combined-efi.img.gz; do
+            mv "$file" "25.12-daed-$file"
+        done
+
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+
+        echo "status=success" >> $GITHUB_OUTPUT
+
+
+    - name: 上传固件目录 # Upload firmware directory
+      uses: actions/upload-artifact@main
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+
+
+    - name: 生成发布标签 # Generate release tag
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "release_tag=$RELEASE_TAG-$KERNEL_VERSION-$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+
+        touch release.txt
+
+        [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
+
+        [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
+
+        echo "status=success" >> $GITHUB_OUTPUT
+
+        echo "## 更新内容" >> release.txt
+
+        echo "<details> <summary> Lean Openwrt Commit Top $COMMIT_LOG_NUM </summary>" >> release.txt
+        git -C openwrt log -n $COMMIT_LOG_NUM >> release.txt
+
+        echo "</details> <details> <summary> Lean Package Commit Top $COMMIT_LOG_NUM </summary>" >> release.txt
+        git -C openwrt/feeds/packages log -n $COMMIT_LOG_NUM >> release.txt
+
+        echo "</details> <details> <summary> Lean Luci Commit Top $COMMIT_LOG_NUM </summary>" >> release.txt
+        git -C openwrt/feeds/luci log -n $COMMIT_LOG_NUM >> release.txt
+
+        echo "</details> <details> <summary> SSRP Commit Top $COMMIT_LOG_NUM </summary>" >> release.txt
+        git -C openwrt/feeds/helloworld log -n $COMMIT_LOG_NUM >> release.txt
+
+        echo "</details> <details> <summary> daed Commit Top $COMMIT_LOG_NUM </summary>" >> release.txt
+        git -C openwrt/feeds/daed log -n $COMMIT_LOG_NUM >> release.txt
+
+
+    - name: 上传固件以及发布 # Upload firmware to release
+      uses: softprops/action-gh-release@v3
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: ${{ env.FIRMWARE }}/*
+
+
+    - name: 删除工作流程运行 # Delete workflow runs
+      uses: Mattraks/delete-workflow-runs@v2
+      with:
+        retain_days: 1
+        keep_minimum_runs: 2
+
+
+    - name: 删除旧版本 # Remove old Releases
+      uses: Jason6111/delete-older-releases@v0.3.5
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      with:
+        keep_latest: 5
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
