@@ -1,0 +1,129 @@
+name: 更新_检查器 #Update_Checker
+
+env:
+
+  # longdongqiang-jason/X86-daed源码
+  REPO_URL_longdongqiangjasonX86daed: https://github.com/longdongqiang-jason/X86-daed
+  REPO_BRANCH_longdongqiangjasonX86daed: main
+  REPO_PATH_longdongqiangjasonX86daed: "longdongqiangjasonX86daed"
+
+  # Lean源码
+  REPO_URL_Lede: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH_Lede: master
+  REPO_PATH_Lede : "lede"
+
+  # Lean Package源码
+  REPO_URL_Lede_Package: https://github.com/coolsnowwolf/packages
+  REPO_BRANCH_Lede_Package: master
+  REPO_PATH_Lede_Package : "package"
+
+  # Lean luci源码
+  REPO_URL_Lede_Luci: https://github.com/coolsnowwolf/luci
+  REPO_BRANCH_Lede_Luci: openwrt-25.12
+  REPO_PATH_Lede_Luci : "luci"
+  
+   # SSRP源码
+  REPO_URL_HelloWorld: https://github.com/fw876/helloworld
+  REPO_BRANCH_HelloWorld: dev
+  REPO_PATH_HelloWorld : "helloworld"
+  
+   # daed源码
+  REPO_URL_daed: https://github.com/kenzok8/openwrt-daede
+  REPO_BRANCH_daed: main
+  REPO_PATH_daed : "daed"  
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+  schedule:
+    - cron: 0 18 * * *
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    
+    steps:
+
+    - name: 获取提交散列 #Get Commit Hash
+      id: getHash
+      run: |
+        git clone --depth 1 $REPO_URL_longdongqiangjasonX86daed -b $REPO_BRANCH_longdongqiangjasonX86daed $REPO_PATH_longdongqiangjasonX86daed
+        cd $REPO_PATH_longdongqiangjasonX86daed
+        echo "commitHash_longdongqiangjasonX86daed=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        cd
+
+        git clone --depth 1 $REPO_URL_Lede -b $REPO_BRANCH_Lede $REPO_PATH_Lede
+        cd $REPO_PATH_Lede
+        echo "commitHash_Lede=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        cd
+
+        git clone --depth 1 $REPO_URL_Lede_Package -b $REPO_BRANCH_Lede_Package $REPO_PATH_Lede_Package
+        cd $REPO_PATH_Lede_Package
+        echo "commitHash_Lede_Package=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        cd
+
+        git clone --depth 1 $REPO_URL_Lede_Luci -b $REPO_BRANCH_Lede_Luci $REPO_PATH_Lede_Luci
+        cd $REPO_PATH_Lede_Luci
+        echo "commitHash_Lede_Luci=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        cd
+
+        git clone --depth 1 $REPO_URL_HelloWorld -b $REPO_BRANCH_HelloWorld $REPO_PATH_HelloWorld 
+        cd $REPO_PATH_HelloWorld
+        echo "commitHash_HelloWorld=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        cd
+
+        git clone --depth 1 $REPO_URL_daed -b $REPO_BRANCH_daed $REPO_PATH_daed 
+        cd $REPO_PATH_daed
+        echo "commitHash_daed=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        cd        
+
+    - name: 显示提交头和组合头 #Show Commit Head and Combination Heads
+      id: combHeader
+      run: |
+        echo "commitHash_longdongqiangjasonX86daed: ${{ steps.getHash.outputs.commitHash_longdongqiangjasonX86daed }}"
+        echo "commitHash_Lede: ${{ steps.getHash.outputs.commitHash_Lede }}"
+        echo "commitHash_Lede_Package: ${{ steps.getHash.outputs.commitHash_Lede_Package }}"
+        echo "commitHash_Lede_Luci: ${{ steps.getHash.outputs.commitHash_Lede_Luci }}"
+        echo "commitHash_HelloWorld: ${{ steps.getHash.outputs.commitHash_HelloWorld }}"
+        echo "commitHash_daed: ${{ steps.getHash.outputs.commitHash_daed }}"        
+        echo "commitHash_All=\
+          ${{steps.getHash.outputs.commitHash_longdongqiangjasonX86daed}}\
+          ${{steps.getHash.outputs.commitHash_Lede}}\
+          ${{steps.getHash.outputs.commitHash_Lede_Package}}\
+          ${{steps.getHash.outputs.commitHash_Lede_Luci}}\
+          ${{steps.getHash.outputs.commitHash_HelloWorld}}\
+          ${{steps.getHash.outputs.commitHash_daed}}" >> $GITHUB_OUTPUT
+          
+    - name: 比较提交散列 #Compare Commit Hash
+      id: cacheHash
+      uses: actions/cache@v5.0.3
+      with:
+        path: .commitHash_All
+        key: HEAD-${{ steps.combHeader.outputs.commitHash_All }}
+   
+
+    - name: 保存新提交散列 #Save New Commit Hash
+      if: steps.cacheHash.outputs.cache-hit != 'true'
+      run: |
+        echo ${{ steps.getHash.outputs.commitHash_longdongqiangjasonX86daed }} | tee .commitHash_longdongqiangjasonX86daed
+        echo ${{ steps.getHash.outputs.commitHash_Lede }} | tee .commitHash_Lede
+        echo ${{ steps.getHash.outputs.commitHash_Lede_Package }} | tee .commitHash_Lede_Package
+        echo ${{ steps.getHash.outputs.commitHash_Lede_Luci }} | tee .commitHash_Lede_Luci
+        echo ${{ steps.getHash.outputs.commitHash_HelloWorld }} | tee .commitHash_HelloWorld
+        echo ${{ steps.getHash.outputs.commitHash_daed }} | tee .commitHash_daed
+        echo ${{ steps.combHeader.outputs.commitHash_All }} | tee .commitHash_All
+
+    - name: 删除工作流程运行 #Delete workflow runs
+      uses: Mattraks/delete-workflow-runs@v2.1.0
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        repository: ${{ github.repository }}
+        retain_days: 1
+        keep_minimum_runs: 2
+        
+    - name: 触发器构建 #Trigger build
+      if: steps.cacheHash.outputs.cache-hit != 'true'
+      uses: peter-evans/repository-dispatch@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        event-type: OpenWrt相关代码更新 #OpenWrt Related Code Updates
