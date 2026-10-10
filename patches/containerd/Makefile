@@ -38,6 +38,7 @@ endef
 
 GO_PKG_INSTALL_EXTRA:=\
 	vendor/google.golang.org/protobuf/internal/editiondefaults/editions_defaults.binpb \
+	vendor/github.com/urfave/cli/v3/autocomplete \
 	Makefile \
 	vendor/modules.txt
 
