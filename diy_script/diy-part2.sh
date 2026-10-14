@@ -67,3 +67,15 @@ config mount
 	option uuid 'b3b41f9e-49d4-41d8-b517-965af8d385e6'
 	option enabled '1'
 EOF
+
+# 网络参数
+mkdir -p files/etc/sysctl.d
+
+cat > files/etc/sysctl.d/zz-network-optimize.conf <<'EOF'
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_rmem=4096 87380 67108864
+net.ipv4.tcp_wmem=4096 65536 67108864
+net.core.rmem_max=67108864
+net.core.wmem_max=67108864
+net.netfilter.nf_conntrack_max=262144
+EOF
