@@ -47,7 +47,7 @@ sed -i '/^echo "0 4 \* \* \* \/etc\/coremark.sh" >> \/etc\/crontabs\/root$/d' ./
 sed -i '/^\[ -n "\$\${IPKG_INSTROOT}" \] \|\| echo "0 4 \* \* \* \/etc\/coremark.sh" >> \/etc\/crontabs\/root$/d' ./feeds/packages/utils/coremark/Makefile
 
 #同步lede-xray
-cp ./feeds/helloworld/xray-core/Makefile ./feeds/packages/net/xray-core/Makefile
+#cp ./feeds/helloworld/xray-core/Makefile ./feeds/packages/net/xray-core/Makefile
 
 #自动挂在
 # NVMe 自动挂载
