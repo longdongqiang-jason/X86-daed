@@ -37,7 +37,7 @@ local function latest()
    local prefix='https://github.com/'..selected.repo..'/releases/download/'
    local url=a.browser_download_url or ''
    if url:sub(1,#prefix)~=prefix or not url:sub(#prefix+1):match('^[%w%.%-%_/]+%.img%.gz$') then error('固件地址异常') end
-   local verification=json.parse(run('/usr/libexec/x86-online-record verify 2>/tmp/x86-online-record-verify-error.log')) or {}
+   local verification=json.parse(run('/usr/libexec/x86-online-record verify 2>/dev/null')) or {}
    local records=json.parse(fs.readfile('/etc/x86-online-installed.json') or '') or {}
    local record=records[selected.repo]
    local boot=(fs.readfile('/proc/sys/kernel/random/boot_id') or ''):gsub('%s+$','')

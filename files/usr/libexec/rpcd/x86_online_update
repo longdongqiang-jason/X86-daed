@@ -57,7 +57,7 @@ if method=='prepare' then
  if fs.stat(prep..'.lock') then emit({running=true});return end
  if not fs.mkdir(prep..'.lock') then emit({error='无法启动准备任务'});return end
  fs.unlink(prep..'.json');fs.unlink(prep..'.tmp')
- local code=os.execute('( /usr/libexec/x86-online-record prepare </dev/null >'..prep..'.tmp 2>'..prep..'.log; mv '..prep..'.tmp '..prep..'.json; rmdir '..prep..'.lock ) </dev/null >/dev/null 2>&1 &')
+ local code=os.execute('( /usr/libexec/x86-online-record prepare </dev/null >'..prep..'.tmp 2>/dev/null; mv '..prep..'.tmp '..prep..'.json; rmdir '..prep..'.lock ) </dev/null >/dev/null 2>&1 &')
  if code~=0 then fs.rmdir(prep..'.lock');emit({error='启动准备任务失败'});return end
  emit({running=true});return
 end
@@ -91,7 +91,7 @@ if method=='download' then
  if fs.stat(base..'.lock') then emit({running=true});return end
  if not fs.mkdir(base..'.lock') then emit({error='无法启动下载任务'});return end
  fs.unlink(base..'.json');fs.unlink(base..'.tmp');fs.unlink(base..'.meta')
- local rc=os.execute("( "..worker.." call download </dev/null >"..base..".tmp 2>"..base..".log; mv "..base..".tmp "..base..".json; rmdir "..base..".lock ) </dev/null >/dev/null 2>&1 &")
+ local rc=os.execute("( "..worker.." call download </dev/null >"..base..".tmp 2>/dev/null; mv "..base..".tmp "..base..".json; rmdir "..base..".lock ) </dev/null >/dev/null 2>&1 &")
  if rc~=0 then fs.rmdir(base..'.lock');emit({error='启动后台下载失败'});return end
  emit({running=true});return
 end
