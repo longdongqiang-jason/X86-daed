@@ -1,7 +1,0 @@
-#!/bin/sh
-chmod 755 /usr/libexec/x86-online-record /usr/libexec/x86-online-update-worker /usr/libexec/rpcd/x86_online_update /etc/init.d/x86-online-record
-/etc/init.d/x86-online-record enable
-for path in /etc/x86-online-update.json /etc/x86-online-installed.json /etc/x86-online-pending.json /www/luci-static/resources/view/system/flash.js /usr/libexec/x86-online-record /usr/libexec/x86-online-update-worker /usr/libexec/rpcd/x86_online_update /usr/share/rpcd/acl.d/x86-online-update.json /etc/init.d/x86-online-record /etc/rc.d/S99x86-online-record; do
- grep -qxF "$path" /etc/sysupgrade.conf 2>/dev/null || printf '\n%s\n' "$path" >> /etc/sysupgrade.conf
-done
-exit 0
