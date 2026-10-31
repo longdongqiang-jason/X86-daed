@@ -1,0 +1,24 @@
+{
+  "x86-online-update": {
+    "description": "Online firmware source, download and verified installation records",
+    "read": {
+      "ubus": {
+        "x86_online_update": [
+          "getconfig",
+          "check",
+          "status",
+          "prepare_status"
+        ]
+      }
+    },
+    "write": {
+      "ubus": {
+        "x86_online_update": [
+          "setconfig",
+          "download",
+          "prepare"
+        ]
+      }
+    }
+  }
+}
