@@ -1,0 +1,115 @@
+#!/usr/bin/lua
+local json=require 'luci.jsonc'
+local fs=require 'nixio.fs'
+local base='/tmp/x86-online-job'
+local worker='/usr/libexec/x86-online-update-worker'
+local function emit(v) io.write(json.stringify(v)) end
+local function read(p) local f=io.open(p);if not f then return nil end;local s=f:read('*a');f:close();return s end
+if arg[1]=='list' then io.write('{"check":{},"download":{},"status":{},"getconfig":{},"setconfig":{"source":"String","custom_repo":"String"},"prepare":{},"prepare_status":{}}');return end
+if arg[1]~='call' then return end
+local config_path='/etc/x86-online-update.json'
+local default_repo='longdongqiang-jason/X86-daed'
+local function valid_repo(s)
+ return type(s)=='string' and #s<=180 and s:match('^[%w_%-]+/[%w_%.%-]+$') and not s:find('..',1,true)
+end
+local function config()
+ local f=io.open(config_path);local v=nil
+ if f then v=json.parse(f:read('*a'));f:close() end
+ v=type(v)=='table' and v or {}
+ local custom=valid_repo(v.custom_repo) and v.custom_repo or ''
+ local source=v.source=='custom' and 'custom' or 'default'
+ if source=='custom' and custom=='' then source='default' end
+ return {source=source,custom_repo=custom,repo=source=='custom' and custom or default_repo}
+end
+local function recover_stale_job()
+ local lock=fs.stat(base..'.lock')
+ if not lock or os.time()-(lock.mtime or os.time())<10 then return end
+ for pid in fs.dir('/proc') do
+  if pid:match('^%d+$') then
+   local c=read('/proc/'..pid..'/cmdline') or ''
+   c=c:gsub('%z',' ')
+   if (c:find('curl',1,true) and c:find('/tmp/x86-online-firmware.part',1,true)) or
+      (c:find(worker,1,true) and c:find('call download',1,true)) then return end
+  end
+ end
+ fs.rmdir(base..'.lock');fs.rmdir('/tmp/x86-online-update.lock')
+ local f=io.open(base..'.json','w')
+ if f then f:write(json.stringify({error='上次下载任务已停止，请点击下方按钮重试。'}));f:close() end
+end
+recover_stale_job()
+local prep='/tmp/x86-record-prepare'
+local function recover_prep()
+ local st=fs.stat(prep..'.lock')
+ if not st or os.time()-(st.mtime or os.time())<10 then return end
+ for pid in fs.dir('/proc') do
+  if pid:match('^%d+$') then
+   local c=(read('/proc/'..pid..'/cmdline') or ''):gsub('%z',' ')
+   if c:find('/usr/libexec/x86-online-record',1,true) and c:find('prepare',1,true) then return end
+  end
+ end
+ fs.rmdir(prep..'.lock')
+ local f=io.open(prep..'.json','w');if f then f:write(json.stringify({error='准备记录任务意外中断，尚未刷机，请重新下载后重试'}));f:close() end
+end
+recover_prep()
+local method=arg[2]
+if method=='prepare' then
+ if fs.stat(base..'.lock') then emit({error='固件仍在下载，不能开始升级'});return end
+ if fs.stat(prep..'.lock') then emit({running=true});return end
+ if not fs.mkdir(prep..'.lock') then emit({error='无法启动准备任务'});return end
+ fs.unlink(prep..'.json');fs.unlink(prep..'.tmp')
+ local code=os.execute('( /usr/libexec/x86-online-record prepare </dev/null >'..prep..'.tmp 2>'..prep..'.log; mv '..prep..'.tmp '..prep..'.json; rmdir '..prep..'.lock ) </dev/null >/dev/null 2>&1 &')
+ if code~=0 then fs.rmdir(prep..'.lock');emit({error='启动准备任务失败'});return end
+ emit({running=true});return
+end
+if method=='prepare_status' then
+ if fs.stat(prep..'.lock') then emit({running=true});return end
+ emit(json.parse(read(prep..'.json') or '') or {error='未取得准备结果，已停止升级'});return
+end
+if (method=='download' or method=='setconfig') and fs.stat(prep..'.lock') then
+ emit({error='正在准备刷机记录，请勿启动其他下载或更改来源'});return
+end
+if method=='getconfig' then emit(config());return end
+if method=='setconfig' then
+ local input=json.parse(io.read('*a') or '') or {}
+ if input.source~='default' and input.source~='custom' then emit({error='来源选项无效'});return end
+ local custom=input.custom_repo or ''
+ if custom~='' and not valid_repo(custom) then emit({error='请填写有效的 GitHub 作者/仓库'});return end
+ if input.source=='custom' and custom=='' then emit({error='请填写自定义仓库'});return end
+ if not fs.mkdir(base..'.lock') then emit({error='正在下载，请结束后再更改来源'});return end
+ local f=io.open(config_path..'.tmp','w')
+ if not f then fs.rmdir(base..'.lock');emit({error='无法保存设置'});return end
+ f:write(json.stringify({source=input.source,custom_repo=custom}));f:close()
+ local ok=fs.rename(config_path..'.tmp',config_path)
+ if ok then fs.chmod(config_path,'600');fs.unlink(base..'.json') end
+ fs.rmdir(base..'.lock')
+ emit(ok and config() or {error='保存设置失败'});return
+end
+if method=='check' then
+ local p=io.popen(worker..' call check </dev/null');local s=p:read('*a');p:close();io.write(s);return
+end
+if method=='download' then
+ if fs.stat(base..'.lock') then emit({running=true});return end
+ if not fs.mkdir(base..'.lock') then emit({error='无法启动下载任务'});return end
+ fs.unlink(base..'.json');fs.unlink(base..'.tmp');fs.unlink(base..'.meta')
+ local rc=os.execute("( "..worker.." call download </dev/null >"..base..".tmp 2>"..base..".log; mv "..base..".tmp "..base..".json; rmdir "..base..".lock ) </dev/null >/dev/null 2>&1 &")
+ if rc~=0 then fs.rmdir(base..'.lock');emit({error='启动后台下载失败'});return end
+ emit({running=true});return
+end
+if method=='status' then
+ if fs.stat(base..'.lock') then
+  local st=fs.stat('/tmp/x86-online-firmware.part')
+  local meta=json.parse(read(base..'.meta') or '') or {}
+  emit({running=true,bytes=st and st.size or 0,total=meta.size or 0});return
+ end
+ local result=json.parse(read(base..'.json') or '')
+ if result and result.size and result.sha256sum then
+  local st=fs.stat('/tmp/firmware.bin')
+  if not st or st.size~=result.size then
+   fs.unlink(base..'.json');emit({idle=true});return
+  end
+  -- Hand the result to the upgrade dialog once. Cancel may delete the image.
+  fs.unlink(base..'.json')
+ end
+ emit(result or {idle=true});return
+end
+emit({error='未知操作'})
