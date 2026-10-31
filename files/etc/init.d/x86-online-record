@@ -1,0 +1,5 @@
+#!/bin/sh /etc/rc.common
+START=99
+start() {
+ /usr/libexec/x86-online-record verify >/dev/null 2>&1 &
+}
