@@ -197,9 +197,12 @@ jobs:
 
     - name: patch2补丁和自定义设置 # Load custom configuration
       run: |
-        [ -e files ] && mv files openwrt/files
+        if [ -d files ]; then
+          mkdir -p openwrt/files
+          cp -a files/. openwrt/files/
+        fi
 
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        [ -e "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
 
         chmod +x $DIY_P2_SH
 
@@ -242,6 +245,7 @@ jobs:
         commit_message: 自动更新config
         branch: main
         commit_author: longdongqiang-jason
+        file_pattern: 'config/*.config'
 
 
     - name: 下载软件包 # Download package
@@ -292,6 +296,7 @@ jobs:
 
 
     - name: 获取内核版本号
+      if: success() && steps.compile.outputs.status == 'success'
       run: |
         cd openwrt/bin/targets/x86/64
 
@@ -302,7 +307,7 @@ jobs:
 
     - name: 整理固件文件夹 # Organize files
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      if: success() && steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
       run: |
         cd openwrt/bin/targets/*/*
 
@@ -321,7 +326,7 @@ jobs:
 
     - name: 上传固件目录 # Upload firmware directory
       uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+      if: success() && steps.organize.outputs.status == 'success' && env.FIRMWARE != ''
       with:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
@@ -329,7 +334,7 @@ jobs:
 
     - name: 生成发布标签 # Generate release tag
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: success() && steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && env.FIRMWARE != ''
       run: |
         echo "release_tag=$RELEASE_TAG-$KERNEL_VERSION-$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
 
@@ -360,14 +365,19 @@ jobs:
 
 
     - name: 上传固件以及发布 # Upload firmware to release
+      id: release
       uses: softprops/action-gh-release@v3
-      if: steps.tag.outputs.status == 'success' && !cancelled()
+      if: success() && steps.organize.outputs.status == 'success' && steps.tag.outputs.status == 'success' && env.FIRMWARE != ''
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
-        files: ${{ env.FIRMWARE }}/*
+        fail_on_unmatched_files: true
+        files: |
+          ${{ env.FIRMWARE }}/*-openwrt-x86-64-generic-squashfs-combined-efi.img.gz
+          ${{ env.FIRMWARE }}/online-update.json
+          ${{ env.FIRMWARE }}/sha256sums
 
 
     - name: 删除工作流程运行 # Delete workflow runs
@@ -379,7 +389,7 @@ jobs:
 
     - name: 删除旧版本 # Remove old Releases
       uses: Jason6111/delete-older-releases@v0.3.5
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: success() && steps.release.outcome == 'success' && env.UPLOAD_RELEASE == 'true'
       with:
         keep_latest: 5
         delete_tags: true
