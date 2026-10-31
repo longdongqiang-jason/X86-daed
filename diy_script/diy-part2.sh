@@ -82,3 +82,15 @@ EOF
 
 # 集成 LuCI 在线更新功能
 python3 "$GITHUB_WORKSPACE/scripts/patch-online-update.py" "$PWD" || exit 1
+
+# 使用 helloworld 的 xray-core，替换 packages 来源
+[ -f feeds/helloworld/xray-core/Makefile ] || {
+    echo "错误：helloworld 中没有 xray-core"
+    exit 1
+}
+
+./scripts/feeds uninstall xray-core || exit 1
+./scripts/feeds install -p helloworld xray-core || exit 1
+
+# 确认安装来源
+ls -l package/feeds/helloworld/xray-core || exit 1
