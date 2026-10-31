@@ -79,3 +79,6 @@ net.core.rmem_max=67108864
 net.core.wmem_max=67108864
 net.netfilter.nf_conntrack_max=262144
 EOF
+
+# 集成 LuCI 在线更新功能
+python3 "$GITHUB_WORKSPACE/scripts/patch-online-update.py" "$PWD" || exit 1
