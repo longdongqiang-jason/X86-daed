@@ -14,9 +14,32 @@ def once(text, pattern, replacement, label):
     value = replacement(m) if callable(replacement) else replacement
     return text[:m.start()] + value + text[m.end():]
 
+AUTO_ENTRY_MARKER = '// X86-ONLINE-UPDATE-AUTO-ENTRY-v1'
+
+def patch_auto_entry(text):
+    if AUTO_ENTRY_MARKER in text:
+        return text
+    replacement = """// X86-ONLINE-UPDATE-AUTO-ENTRY-v1
+        return m.render().then(L.bind(function(node) {
+            if (has_sysupgrade &&
+                new URLSearchParams(window.location.search).get('online_update') === '1') {
+                window.setTimeout(L.bind(function() {
+                    var btn = E('button', {
+                        'type': 'button',
+                        'data-online-update': '1'
+                    }, '检查最新版 / 在线下载');
+                    this.handleOnlineFirmware(
+                        storage_size, has_rootfs_data, { target: btn }
+                    );
+                }, this), 0);
+            }
+            return node;
+        }, this));"""
+    return once(text, r'return\s+m\.render\(\);', replacement, 'automatic online update entry')
+
 def patch(text, resources):
     if MARKER in text:
-        return text
+        return patch_auto_entry(text)
     online = (resources / 'online-method.js').read_text()
     confirm = (resources / 'confirm-methods.js').read_text()
     text = once(text, r'(?P<indent>^[ \t]*)handleSysupgrade\(storage_size,\s*has_rootfs_data,\s*ev\)\s*\{',
@@ -31,7 +54,7 @@ def patch(text, resources):
         lambda m: m[0] + '\n' + m['i'] + "o = ss.option(form.Button, 'online_sysupgrade', '在线更新');\n" + m['i'] + "o.inputstyle = 'action important';\n" + m['i'] + "o.inputtitle = '检查最新版 / 在线下载';\n" + m['i'] + 'o.onclick = L.bind(this.handleOnlineFirmware, this, storage_size, has_rootfs_data);', 'online button')
     text = once(text, r"body\.push\(E\('p',\s*\{\},\s*E\('label',\s*\{\s*'class':\s*'btn'\s*\},\s*\[\s*opts\.keep\[0\],[\s\S]*?\]\)\)\);",
         lambda m: m[0] + "\nif (ev.onlineReply) body.push(E('p', {}, '保留配置时，重启并验证实际根文件系统及内核后，自动记录已安装固件 SHA256；不保留配置则无法保留记录。'));", 'installation record note')
-    return MARKER + '\n' + text
+    return MARKER + '\n' + patch_auto_entry(text)
 
 def main():
     root = Path(sys.argv[1] if len(sys.argv) > 1 else '.').resolve()
