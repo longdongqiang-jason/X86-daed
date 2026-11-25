@@ -21,9 +21,9 @@ sed -i 's/+cgroupfs-mount //g' feeds/luci/applications/luci-app-dockerman/Makefi
 # dockerd
 # wget https://codeload.github.com/moby/moby/tar.gz/docker-v29.7.2
 # sha256sum docker-v29.7.2
-sed -i -e 's/29.6.1/29.10.0/g' \
-       -e 's/a97bd870c4b072b7d9cc053b2a806ca3d920f192f9dc6a662e17c1b69f56f2e1/52ee9d504b0ff278fb591956d761f6f5a8f0008b6bc6d19bc2916856b3f725b9/g' \
-       -e 's/8ec5ab3/06db173/g' ./feeds/packages/utils/dockerd/Makefile
+sed -i -e 's/29.6.1/29.10.1/g' \
+       -e 's/a97bd870c4b072b7d9cc053b2a806ca3d920f192f9dc6a662e17c1b69f56f2e1/1db604788073ae5bf91567777746d3f269a91d546209cc9c009a2611303d3fae/g' \
+       -e 's/8ec5ab3/54cd494/g' ./feeds/packages/utils/dockerd/Makefile
        
 #containerd       
 wget -O ./feeds/packages/utils/containerd/Makefile \
@@ -41,9 +41,9 @@ sed -i '/^[[:space:]]*cli\/compose\/schema\/data[[:space:]]*\\$/a\
 
 # docker
 # wget https://codeload.github.com/docker/cli/tar.gz/v29.7.2
-sed -i -e 's/29.6.1/29.10.0/g' \
-       -e 's/74d14dd212b07cd3328989dc6a029dde2ebbe6a878199eaaafad54916f456194/7b955259e070e839586faff4957ce71484380f3aff5caf519470c1448f9e9192/g' \
-       -e 's/8900f1d/fdd4b8e/g' ./feeds/packages/utils/docker/Makefile
+sed -i -e 's/29.6.1/29.10.1/g' \
+       -e 's/74d14dd212b07cd3328989dc6a029dde2ebbe6a878199eaaafad54916f456194/64701a1a4a2d3906f43809cd7b8636246e73432715d1fb279c35b18bca0e4b76/g' \
+       -e 's/8900f1d/c48360f/g' ./feeds/packages/utils/docker/Makefile
 
 # 禁用
 #sed -i -e '\|$(call EnsureVendoredVersion,containerd)|{s/^/# /}' \
